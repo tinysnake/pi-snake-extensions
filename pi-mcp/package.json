@@ -1,0 +1,63 @@
+{
+  "name": "@tinysnake/pi-mcp",
+  "version": "1.0.0",
+  "description": "MCP integration for pi: load-once whole-server schema, then call — in-process MCP SDK connector with OAuth 2.1, no daemon needed",
+  "keywords": [
+    "pi",
+    "pi-package",
+    "pi-extension",
+    "mcp",
+    "model-context-protocol"
+  ],
+  "homepage": "https://github.com/tinysnake/pi-snake-extensions#readme",
+  "bugs": {
+    "url": "https://github.com/tinysnake/pi-snake-extensions/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tinysnake/pi-snake-extensions.git",
+    "directory": "pi-mcp"
+  },
+  "license": "MIT",
+  "author": "SNAKE (https://github.com/tinysnake)",
+  "type": "module",
+  "main": "./index.ts",
+  "exports": {
+    ".": "./index.ts",
+    "./connection": "./connection.ts",
+    "./utils": "./utils.ts",
+    "./mcp-auth": "./mcp-auth.ts",
+    "./mcp-auth-flow": "./mcp-auth-flow.ts",
+    "./mcp-callback-server": "./mcp-callback-server.ts",
+    "./mcp-oauth-provider": "./mcp-oauth-provider.ts",
+    "./npx-resolver": "./npx-resolver.ts"
+  },
+  "files": [
+    "*.ts",
+    "docs/",
+    "!tests/"
+  ],
+  "scripts": {
+    "test": "node --test tests/*.test.ts"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ],
+    "image": "https://github.com/tinysnake/pi-snake-extensions/raw/main/pi-mcp/docs/assets/screenshot.png"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.25.0"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
+  },
+  "engines": {
+    "node": ">=22.6"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
