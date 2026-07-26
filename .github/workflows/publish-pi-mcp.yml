@@ -1,0 +1,64 @@
+name: Publish pi-mcp
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'pi-mcp/package.json'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Force publish — skip version change check and overwrite existing version'
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: publish-pi-mcp-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: 'https://registry.npmjs.org'
+          cache: 'npm'
+          cache-dependency-path: 'pi-mcp/package-lock.json'
+
+      - name: Check version change
+        id: version
+        run: |
+          CURRENT=$(node -p "require('./pi-mcp/package.json').version")
+          PREVIOUS=$(git show HEAD~1:pi-mcp/package.json 2>/dev/null | node -p "require('/dev/stdin').version" 2>/dev/null || echo "")
+          echo "current=${CURRENT}"
+          echo "previous=${PREVIOUS}"
+          echo "current=${CURRENT}" >> "$GITHUB_OUTPUT"
+          echo "previous=${PREVIOUS}" >> "$GITHUB_OUTPUT"
+
+      - name: Install dependencies
+        if: steps.version.outputs.current != steps.version.outputs.previous || inputs.force
+        run: npm ci
+        working-directory: pi-mcp
+
+      - name: Run tests
+        if: steps.version.outputs.current != steps.version.outputs.previous || inputs.force
+        run: npm test
+        working-directory: pi-mcp
+
+      - name: Publish to npm
+        if: steps.version.outputs.current != steps.version.outputs.previous || inputs.force
+        run: npm publish ${{ inputs.force && '--force' || '' }}
+        working-directory: pi-mcp
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
