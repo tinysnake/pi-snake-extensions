@@ -216,11 +216,15 @@ async function runToolExecute(stub: ReturnType<typeof makeStubPi>, name: string,
   return t.execute("tcid", params, signal, NoUpdate, NoCtx);
 }
 
-/** Trigger async discovery via the session_start handler. */
-async function initDiscovery(stub: ReturnType<typeof makeStubPi>) {
+/** Trigger async discovery via the session_start handler.
+ *  Waits for the background discovery to complete when a registry is provided. */
+async function initDiscovery(stub: ReturnType<typeof makeStubPi>, reg?: McpRegistry) {
   const handler = stub.events["session_start"];
   if (!handler) throw new Error("session_start handler not registered");
   await handler({ reason: "new" }, { ui: { setStatus: () => {} } });
+  // PerformDiscovery runs as fire-and-forget inside the handler.
+  // Await it explicitly here so tests see a consistent state.
+  if (reg) await reg.performDiscovery({ ui: { setStatus: () => {} } });
 }
 
 // ── registry: registration shape ─────────────────────────────────────────────
@@ -237,8 +241,8 @@ test("registry registers exactly 3 tools + /mcp-refresh + /mcp-auth commands", (
 test("mcp_call rejects with gate error when server not loaded yet", async () => {
   const stub = makeStubPi();
   const fake = new FakeMcpConnector(["svc"], { svc: [makeTool("ping", "p")] });
-  createMcpRegistry(stub.api as any, fake);
-  await initDiscovery(stub);
+  const reg = createMcpRegistry(stub.api as any, fake);
+  await initDiscovery(stub, reg);
 
   const r = await runToolExecute(stub, "mcp_call", { selector: "svc.ping", args: {} });
   assert.match(r.content[0].text, /has not been loaded/);
@@ -249,8 +253,8 @@ test("mcp_call rejects with gate error when server not loaded yet", async () => 
 test("mcp_call succeeds after mcp_load", async () => {
   const stub = makeStubPi();
   const fake = new FakeMcpConnector(["svc"], { svc: [makeTool("ping", "p")] });
-  createMcpRegistry(stub.api as any, fake);
-  await initDiscovery(stub);
+  const reg = createMcpRegistry(stub.api as any, fake);
+  await initDiscovery(stub, reg);
 
   const load = await runToolExecute(stub, "mcp_load", { server: "svc" });
   assert.match(load.content[0].text, /### svc\.ping/);
@@ -274,8 +278,8 @@ test("mcp_call rejects malformed selector", async () => {
 test("mcp_call rejects unknown server", async () => {
   const stub = makeStubPi();
   const fake = new FakeMcpConnector(["svc"], { svc: [makeTool("ping", "p")] });
-  createMcpRegistry(stub.api as any, fake);
-  await initDiscovery(stub);
+  const reg = createMcpRegistry(stub.api as any, fake);
+  await initDiscovery(stub, reg);
   await runToolExecute(stub, "mcp_load", { server: "svc" });
   const r = await runToolExecute(stub, "mcp_call", { selector: "ghost.ping", args: {} });
   assert.match(r.content[0].text, /Server "ghost" not found/);
@@ -290,8 +294,8 @@ test("mcp_load emits full parameter schema for every tool on the server", async 
       makeTool("list", "List", { filter: { type: "string", enum: ["a", "b"] } }),
     ],
   });
-  createMcpRegistry(stub.api as any, fake);
-  await initDiscovery(stub);
+  const reg = createMcpRegistry(stub.api as any, fake);
+  await initDiscovery(stub, reg);
   const r = await runToolExecute(stub, "mcp_load", { server: "multitool" });
   const text = r.content[0].text as string;
   assert.match(text, /### multitool\.add/);
@@ -312,8 +316,8 @@ test("mcp_call on validation-error outcome appends schema snippet from loaded ca
     kind: "validation",
     errorText: "1 validation error for call[ping]\n  name\n    Missing required argument",
   });
-  createMcpRegistry(stub.api as any, fake);
-  await initDiscovery(stub);
+  const reg = createMcpRegistry(stub.api as any, fake);
+  await initDiscovery(stub, reg);
 
   await runToolExecute(stub, "mcp_load", { server: "svc" });
   const r = await runToolExecute(stub, "mcp_call", { selector: "svc.ping", args: {} });
@@ -327,8 +331,8 @@ test("mcp_call on validation-error outcome appends schema snippet from loaded ca
 test("mcp_call clamps timeout and passes ms to connector", async () => {
   const stub = makeStubPi();
   const fake = new FakeMcpConnector(["svc"], { svc: [makeTool("ping", "p")] });
-  createMcpRegistry(stub.api as any, fake);
-  await initDiscovery(stub);
+  const reg = createMcpRegistry(stub.api as any, fake);
+  await initDiscovery(stub, reg);
   await runToolExecute(stub, "mcp_load", { server: "svc" });
 
   await runToolExecute(stub, "mcp_call", { selector: "svc.ping", args: {}, timeout: 99999 });
@@ -340,7 +344,7 @@ test("mcp_refresh reloads config and drops loaded schemas for removed servers", 
   const stub = makeStubPi();
   const fake = new FakeMcpConnector(["old", "keep"], { old: [makeTool("x", "x")], keep: [makeTool("y", "y")] });
   const reg = createMcpRegistry(stub.api as any, fake);
-  await initDiscovery(stub);
+  await initDiscovery(stub, reg);
 
   await runToolExecute(stub, "mcp_load", { server: "old" });
   await runToolExecute(stub, "mcp_load", { server: "keep" });
@@ -360,7 +364,7 @@ test("mcp_refresh reloads config and drops loaded schemas for removed servers", 
 test("session_start trigger sends steer message with available servers", async () => {
   const stub = makeStubPi();
   const fake = new FakeMcpConnector(["ctx7", "UnityMCP"], {});
-  createMcpRegistry(stub.api as any, fake);
+  const reg = createMcpRegistry(stub.api as any, fake);
 
   const ctxStub = {
     ui: {
@@ -371,6 +375,8 @@ test("session_start trigger sends steer message with available servers", async (
   const handler = stub.events["session_start"];
   assert.ok(handler, "session_start handler registered");
   await handler({ reason: "new" }, ctxStub);
+  // Await background discovery so the steer message is sent
+  await reg.performDiscovery(ctxStub);
 
   assert.ok(stub.sent.length >= 1);
   const last = stub.sent[stub.sent.length - 1];
