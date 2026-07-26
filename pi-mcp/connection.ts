@@ -298,11 +298,11 @@ export function hasLiveSession(conn: { transport?: unknown }): boolean {
   return conn.transport != null && transportSessionId(conn.transport) !== undefined;
 }
 
-/** Abortable, non-blocking-when-unref'd delay. */
+/** Abortable delay for retry backoff (keeps event loop alive). */
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => {
     const t = setTimeout(resolve, ms);
-    if (typeof (t as any)?.unref === "function") (t as any).unref();
+    void t; // keep event loop alive — retry backoff must not be unref'd
   });
 }
 
