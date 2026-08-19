@@ -21,12 +21,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- CI: npm publishing is now gated on GitHub releases (`on: release`) instead
-  of push-triggered auto-publish. Pre-releases are skipped, and the release
-  tag must match `package.json` version before anything runs.
-- Release notes are sourced from this CHANGELOG: bump the version, move the
-  `[Unreleased]` section into a versioned heading, then paste that section
-  into the GitHub release body.
+- CI: npm publishing is now gated on namespaced version tags
+  (`on: push: tags: ['pi-mcp@*']`) instead of push-triggered auto-publish. The
+  tagged version must match `package.json` before anything runs. Each extension
+  in this monorepo publishes independently via its own `pkg@version` tag.
+- Release flow per package: bump `package.json`, move the `[Unreleased]`
+  section into a versioned heading, then push the namespaced tag
+  (`pi-mcp@X.Y.Z`) to run tests and publish to npm.
 - The `CHANGELOG.md` is now included in the published npm tarball, and the
   README links to it.
 
