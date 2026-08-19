@@ -143,6 +143,12 @@ fails, the authorization URL is printed in chat.
 See [docs/technical.md](docs/technical.md) for token storage format,
 environment variables, and manual completion details.
 
+## Changelog
+
+See [CHANGELOG.md](https://github.com/tinysnake/pi-snake-extensions/blob/master/pi-mcp/CHANGELOG.md)
+for the version history. GitHub release notes mirror the corresponding
+CHANGELOG section for each version.
+
 ## Out of scope (v1)
 
 - `/mcp` panel, `/mcp setup`, search/describe verbs, sampling, elicitation,
