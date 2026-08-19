@@ -14,6 +14,12 @@ import { tmpdir } from "node:os";
 import { Text, Container } from "@earendil-works/pi-tui";
 
 import {
+  buildMcpServersPanel,
+  type McpListSnapshot,
+  type McpListServer,
+} from "./mcp-list-panel.ts";
+
+import {
   formatToolList,
   truncateOutput,
   formatMcpCall,
@@ -632,6 +638,49 @@ export function createMcpRegistry(pi: ExtensionAPI, connector: McpConnector): Mc
           setTimeout(() => { try { ctx.ui.setStatus("pi-mcp", undefined); } catch {} }, 10000);
         } catch { /* ctx stale */ }
       }
+    },
+  });
+
+  // ── /mcp-list command (user-only, not exposed to agent) ────────────────────
+  // User-facing readout of which MCP servers are connected. Opens a floating
+  // overlay panel (ctx.ui.custom, globally centered — footer heights are
+  // dynamic); Esc closes it. Content is display-only and never enters LLM
+  // context — the agent's picture comes exclusively from <mcp-info-update> blocks.
+  pi.registerCommand("mcp-list", {
+    description: "List MCP servers and connection status (user-only, not sent to the agent)",
+    handler: async (_args, ctx) => {
+      // Non-TUI (RPC/print/json): no response by design.
+      if (ctx.mode !== "tui") return;
+
+      // Cached state only — never triggers a probe.
+      const snapshot: McpListSnapshot = {
+        at: Date.now(),
+        discoveryComplete,
+        servers: [...serverInfos.values()].map((s): McpListServer => ({
+          name: s.name,
+          status: s.status,
+          error: s.error,
+          toolCount: s.tools?.length,
+          auth: s.auth,
+        })),
+      };
+
+      await ctx.ui.custom(
+        (_tui, theme, _keybindings, done) =>
+          buildMcpServersPanel(snapshot, theme, () => done(undefined)),
+        {
+          overlay: true,
+          overlayOptions: {
+            // Global center: footer/header heights are dynamic, so any fixed
+            // edge anchor (e.g. bottom-center) misplaces the panel.
+            minWidth: 40,
+            maxHeight: "50%",
+            margin: 2,
+          },
+          // Take input ownership so Esc reaches the panel, not the editor.
+          onHandle: (handle) => handle.focus(),
+        },
+      );
     },
   });
 
