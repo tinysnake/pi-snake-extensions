@@ -11,7 +11,7 @@ import { Type } from "typebox";
 import { join } from "node:path";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { Text } from "@earendil-works/pi-tui";
+import { Text, Container } from "@earendil-works/pi-tui";
 
 import {
   formatToolList,
@@ -69,10 +69,36 @@ export interface McpRegistry {
   shutdown(): Promise<void>;
 }
 
+/**
+ * Build the self-identifying `<mcp-info-update>` block injected into LLM context.
+ *
+ * Every block is a complete snapshot (server list + load-before-call hint), so
+ * the rule "only the most recent block is authoritative" (enforced via the
+ * system prompt) never loses information: a later block always carries the
+ * full current state plus the reminder the LLM needs.
+ */
+function buildInfoBlock(seq: number, available: string[], unavailable: string[]): string {
+  const listLine = available.length > 0
+    ? `✅ Available servers: ${available.join(", ")}`
+    : "✅ Available servers: none";
+  const unavailLine = unavailable.length > 0
+    ? `\n❌ Unavailable servers: ${unavailable.join(", ")}`
+    : "";
+  return [
+    `<mcp-info-update seq="${seq}">`,
+    "Current MCP server state:",
+    listLine + unavailLine,
+    "You must call mcp_load SERVER (replace SERVER with a server name) to load its tool schemas before calling mcp_call.",
+    "</mcp-info-update>",
+  ].join("\n");
+}
+
 export function createMcpRegistry(pi: ExtensionAPI, connector: McpConnector): McpRegistry {
   let serverInfos = new Map<string, ServerInfo>();
   let discoveryComplete = false;
   let discoveryPromise: Promise<void> | null = null;
+  // Monotonically increasing sequence for <mcp-info-update> blocks: newest wins.
+  let infoSeq = 0;
 
   function serverNamesSnapshot(): string[] {
     return [...serverInfos.keys()];
@@ -95,9 +121,9 @@ export function createMcpRegistry(pi: ExtensionAPI, connector: McpConnector): Mc
         try {
           pi.sendMessage({
             customType: "mcp-init",
-            content: "pi-mcp initialisation complete. No MCP servers configured.",
-            display: true,
-          }, { deliverAs: "steer" });
+            content: buildInfoBlock(++infoSeq, [], []),
+            display: false,
+          });
         } catch { /* pi may be disposed */ }
         return;
       }
@@ -131,23 +157,16 @@ export function createMcpRegistry(pi: ExtensionAPI, connector: McpConnector): Mc
 
       discoveryComplete = true;
 
-      // Build the formatted message
-      let listMsg: string;
-      if (available.length > 0 && unavailable.length > 0) {
-        listMsg = `✅ Available servers: ${available.join(", ")}\n❌ Unavailable servers: ${unavailable.join(", ")}`;
-      } else if (available.length > 0) {
-        listMsg = `✅ Available servers: ${available.join(", ")}`;
-      } else {
-        listMsg = `❌ All servers unreachable: ${unavailable.join(", ")}`;
-      }
-      listMsg += `\nYou must call \`mcp_load <server>\` to load tool schemas before using \`mcp_call\`. Never guess tool names or parameters.`;
-
       try {
-        pi.sendMessage({ customType: "mcp-init", content: listMsg, display: true }, { deliverAs: "steer" });
+        pi.sendMessage({
+          customType: "mcp-init",
+          content: buildInfoBlock(++infoSeq, available, unavailable),
+          display: false,
+        });
       } catch { /* pi may be disposed */ }
 
       try {
-        ctx?.ui?.setStatus?.("pi-mcp", `✅ pi-mcp: ${available.length} available, ${unavailable.length} unreachable`);
+        ctx?.ui?.setStatus?.("pi-mcp", `✅ pi-mcp: ${available.length} available${unavailable.length > 0 ? `, ${unavailable.length} unreachable` : ""}`);
         const t = setTimeout(() => {
           try { ctx?.ui?.setStatus?.("pi-mcp", undefined); } catch { /* ctx stale */ }
         }, 10000);
@@ -181,8 +200,9 @@ export function createMcpRegistry(pi: ExtensionAPI, connector: McpConnector): Mc
     // to return { systemPrompt: modified } from this handler.
     // (Confirmed in agent-session.js ~line 888-922)
     const guidelines: string[] = [
-      "MCP tools require a load-before-call workflow. You MUST call mcp_load <server> to load the complete tool schemas (names, descriptions, full parameter types) for a server before calling mcp_call for any tool on that server. Calling mcp_call without a prior mcp_load for that server will fail with an error. Never guess tool names, parameter names, or parameter types — load the server first.",
+      "MCP tools require a load-before-call workflow. You MUST call mcp_load SERVER (replace SERVER with an actual server name) to load the complete tool schemas (names, descriptions, full parameter types) for a server before calling mcp_call for any tool on that server. Calling mcp_call without a prior mcp_load for that server will fail with an error. Never guess tool names, parameter names, or parameter types — load the server first.",
       "When an MCP server is unavailable (❌), do NOT investigate why. Immediately tell the user the server is unreachable and ask if they want help troubleshooting — do not attempt any diagnosis yourself.",
+      "pi-mcp appends <mcp-info-update> blocks to the conversation carrying the current MCP server list. Only the most recent <mcp-info-update> block is authoritative — ignore all earlier blocks and any stale server lists they contain.",
     ];
 
     // Append guidelines after the last known guideline sentinel
@@ -491,30 +511,14 @@ export function createMcpRegistry(pi: ExtensionAPI, connector: McpConnector): Mc
       "configuration has changed or a server is not found.",
     promptSnippet: "Refresh MCP server cache",
     parameters: Type.Object({}),
-    renderCall(_args, theme, context) {
-      const state = context.state;
-      if (context.executionStarted && state.startedAt === undefined) {
-        state.startedAt = Date.now();
-        state.endedAt = undefined;
-      }
-      const text: Text = (context.lastComponent ?? new Text("", 0, 0)) as Text;
-      text.setText(formatMcpCall("mcp_refresh", {}, theme));
-      return text;
+    // The status is already shown in the footer; render nothing in the transcript.
+    // renderShell "self" + empty renderers makes the whole tool call invisible.
+    renderShell: "self",
+    renderCall() {
+      return new Container();
     },
-    renderResult(result, options, theme, context) {
-      if (context.isError) throw new Error("error");
-      const state = context.state;
-      if (state.startedAt !== undefined && options.isPartial && !state.interval) {
-        state.interval = setInterval(() => context.invalidate(), 1000);
-      }
-      if (!options.isPartial || context.isError) {
-        state.endedAt ??= Date.now();
-        if (state.interval) { clearInterval(state.interval); state.interval = undefined; }
-      }
-      const container: ToolResultContainer = (context.lastComponent ?? new ToolResultContainer()) as ToolResultContainer;
-      rebuildToolResultContainer(container, result, options, theme, state.startedAt, state.endedAt);
-      container.invalidate();
-      return container;
+    renderResult() {
+      return new Container();
     },
     async execute(_toolCallId, _params, _signal, onUpdate, _ctx) {
       onUpdate?.({
@@ -532,7 +536,7 @@ export function createMcpRegistry(pi: ExtensionAPI, connector: McpConnector): Mc
       if (configNames.length === 0) {
         discoveryComplete = true;
         return {
-          content: [{ type: "text" as const, text: "pi-mcp cache refreshed. No MCP servers configured." }],
+          content: [{ type: "text" as const, text: buildInfoBlock(++infoSeq, [], []) }],
           details: { serverCount: 0 },
         };
       }
@@ -562,11 +566,10 @@ export function createMcpRegistry(pi: ExtensionAPI, connector: McpConnector): Mc
       }
       discoveryComplete = true;
 
+      // The result content is the <mcp-info-update> block itself, so the LLM
+      // reads the fresh state through the same "newest block wins" contract.
       return {
-        content: [{
-          type: "text" as const,
-          text: `pi-mcp cache refreshed. ✅ Available: ${available.join(", ") || "none"}${unavailable.length > 0 ? ` ❌ Unavailable: ${unavailable.join(", ")}` : ""}. 0 server(s) with loaded schemas.`,
-        }],
+        content: [{ type: "text" as const, text: buildInfoBlock(++infoSeq, available, unavailable) }],
         details: { serverCount: configNames.length },
       };
     },
@@ -590,8 +593,7 @@ export function createMcpRegistry(pi: ExtensionAPI, connector: McpConnector): Mc
             ctx.ui.setStatus("pi-mcp", `⚠️ pi-mcp: no servers configured`);
             setTimeout(() => { try { ctx.ui.setStatus("pi-mcp", undefined); } catch {} }, 10000);
           } catch { /* ctx stale */ }
-          const msg = "pi-mcp cache refreshed. No MCP servers configured.";
-          try { pi.sendMessage({ customType: "mcp-refresh", content: msg, display: true }, { deliverAs: "steer" }); } catch {}
+          try { pi.sendMessage({ customType: "mcp-refresh", content: buildInfoBlock(++infoSeq, [], []), display: false }); } catch {}
           return;
         }
 
@@ -619,19 +621,9 @@ export function createMcpRegistry(pi: ExtensionAPI, connector: McpConnector): Mc
         }
         discoveryComplete = true;
 
-        let listMsg: string;
-        if (available.length > 0 && unavailable.length > 0) {
-          listMsg = `✅ Available servers: ${available.join(", ")}\n❌ Unavailable servers: ${unavailable.join(", ")}`;
-        } else if (available.length > 0) {
-          listMsg = `✅ Available servers: ${available.join(", ")}`;
-        } else {
-          listMsg = `❌ All servers unreachable: ${unavailable.join(", ")}`;
-        }
-        listMsg += `\nUse \`mcp_load <server>\` to load tool schemas before calling \`mcp_call\`. 0 server(s) with loaded schemas.`;
-
-        try { pi.sendMessage({ customType: "mcp-refresh", content: listMsg, display: true }, { deliverAs: "steer" }); } catch {}
+        try { pi.sendMessage({ customType: "mcp-refresh", content: buildInfoBlock(++infoSeq, available, unavailable), display: false }); } catch {}
         try {
-          ctx.ui.setStatus("pi-mcp", `🔄 pi-mcp: ${available.length} available, ${unavailable.length} unreachable`);
+          ctx.ui.setStatus("pi-mcp", `🔄 pi-mcp: ${available.length} available${unavailable.length > 0 ? `, ${unavailable.length} unreachable` : ""}`);
           setTimeout(() => { try { ctx.ui.setStatus("pi-mcp", undefined); } catch {} }, 10000);
         } catch {}
       } catch (error: unknown) {

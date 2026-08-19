@@ -381,8 +381,11 @@ test("session_start trigger sends steer message with available servers", async (
   assert.ok(stub.sent.length >= 1);
   const last = stub.sent[stub.sent.length - 1];
   assert.equal(last.customType, "mcp-init");
+  assert.equal(last.display, false); // hidden from transcript, still delivered to LLM
+  assert.match(last.content, /^<mcp-info-update seq="1">/);
   assert.match(last.content, /✅ Available servers: ctx7, UnityMCP/);
-  assert.match(last.content, /mcp_load/);
+  assert.match(last.content, /mcp_load SERVER/);
+  assert.match(last.content, /<\/mcp-info-update>$/);
 });
 
 test("session_start skips on reload/resume/fork reasons", async () => {
@@ -416,8 +419,9 @@ Pi documentation...`;
   const result = handler(fakeEvent, {});
   assert.ok(result, "handler should return an object");
   assert.ok(typeof result.systemPrompt === "string", "systemPrompt should be a string");
-  assert.match(result.systemPrompt, /mcp_load <server>.*before.*mcp_call/s);
+  assert.match(result.systemPrompt, /mcp_load SERVER.*before.*mcp_call/s);
   assert.match(result.systemPrompt, /server is unavailable.*do NOT investigate/s);
+  assert.match(result.systemPrompt, /<mcp-info-update>.*most recent.*authoritative/s);
   // Verify the sentinel is still present and guidelines are in the right section
   assert.ok(result.systemPrompt.includes("Show file paths clearly when working with files"));
   // The original promptGuidelines array should NOT have been modified
