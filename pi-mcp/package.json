@@ -1,6 +1,6 @@
 {
   "name": "@tinysnake/pi-mcp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "MCP integration for pi: load-once whole-server schema, then call — in-process MCP SDK connector with OAuth 2.1, no daemon needed",
   "keywords": [
     "pi",
