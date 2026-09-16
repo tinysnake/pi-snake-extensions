@@ -1,6 +1,6 @@
 {
   "name": "@tinysnake/pi-mcp",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "MCP integration for pi: load-once whole-server schema, then call — in-process MCP SDK connector with OAuth 2.1, no daemon needed",
   "keywords": [
     "pi",
@@ -47,7 +47,8 @@
     ]
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.25.0"
+    "@modelcontextprotocol/sdk": "^1.25.0",
+    "undici": "^8.10.2"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",

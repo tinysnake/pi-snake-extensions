@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-08-19
+
+### Fixed
+
+- Manage a dedicated HTTP proxy dispatcher per `HttpMcpManager` and destroy it during `closeAll()`, preventing idle keep-alive sockets from delaying process exit in CLI print mode (`pi -p`).
+
 ## [0.2.0] - 2026-08-19
 
 ### Added

@@ -16,6 +16,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js";
 import type { RequestOptions } from "@modelcontextprotocol/sdk/shared/protocol.js";
+import { EnvHttpProxyAgent } from "undici";
 
 import type { McpTool } from "./utils.ts";
 
@@ -310,10 +311,24 @@ export class HttpMcpManager implements McpConnector {
   protected connections = new Map<string, ServerConnection>();
   protected connecting = new Map<string, Promise<ServerConnection>>();
   protected config: McpConfig;
+  private dispatcher: EnvHttpProxyAgent;
 
-  constructor(config?: McpConfig) {
+  constructor(config?: McpConfig, dispatcher?: EnvHttpProxyAgent) {
     this.config = config ?? loadMcpConfig();
+    this.dispatcher = dispatcher ?? new EnvHttpProxyAgent();
   }
+
+  /** Custom fetch wrapper routing all MCP HTTP traffic through this manager's dispatcher. */
+  private mcpFetch: typeof fetch = (input, init) => {
+    if ((this.dispatcher as any).destroyed) {
+      this.dispatcher = new EnvHttpProxyAgent();
+    }
+    return fetch(input, {
+      ...init,
+      // @ts-expect-error Node.js global fetch supports undici dispatcher
+      dispatcher: this.dispatcher,
+    });
+  };
 
   discoverServerNames(): string[] {
     return Object.keys(this.config.servers);
@@ -398,7 +413,7 @@ export class HttpMcpManager implements McpConnector {
       }
     }
 
-    const transportOpts: Record<string, unknown> = { requestInit };
+    const transportOpts: Record<string, unknown> = { requestInit, fetch: this.mcpFetch };
     if (carrySessionId) transportOpts.sessionId = carrySessionId;
     if (authProvider) transportOpts.authProvider = authProvider;
 
@@ -421,7 +436,7 @@ export class HttpMcpManager implements McpConnector {
       if (signalAborted(def, err)) throw err;
       // Fall back to SSE (legacy transport). SSE transport has no sessionId hook;
       // carry-over is a StreamableHTTP-only capability and is intentionally dropped here.
-      return { transport: new SSEClientTransport(url, { requestInit }), authNeeded: false };
+      return { transport: new SSEClientTransport(url, { requestInit, fetch: this.mcpFetch }), authNeeded: false };
     }
   }
 
@@ -842,6 +857,7 @@ export class HttpMcpManager implements McpConnector {
   async closeAll(): Promise<void> {
     const names = [...this.connections.keys()];
     await Promise.all(names.map((n) => this.close(n).catch(() => {})));
+    await this.dispatcher.destroy().catch(() => {});
   }
 }
 

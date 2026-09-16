@@ -147,7 +147,7 @@ environment variables, and manual completion details.
 
 See [CHANGELOG.md](https://github.com/tinysnake/pi-snake-extensions/blob/master/pi-mcp/CHANGELOG.md)
 for the version history. A version is published to npm by bumping
-`package.json` and pushing a namespaced tag (e.g. `pi-mcp@0.2.0`); the
+`package.json` and pushing a namespaced tag (e.g. `pi-mcp@0.2.1`); the
 publish workflow runs tests and uploads only when the tag matches the
 `package.json` version.
 
