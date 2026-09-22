@@ -1,0 +1,60 @@
+name: Publish pi-think-twice
+
+on:
+  push:
+    tags:
+      - 'pi-think-twice@*'
+
+concurrency:
+  group: publish-pi-think-twice-${{ github.ref }}
+  cancel-in-progress: true
+
+# Publish only on deliberate version tags for this package — no push-to-master
+# auto-publishing, no GitHub Releases. This is a monorepo: each extension keeps
+# its own release cadence and publishes via its own namespaced tag (e.g.
+# 'pi-think-twice@0.1.0'). The tag's version must match package.json before
+# anything runs.
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: 'https://registry.npmjs.org'
+          cache: 'npm'
+          cache-dependency-path: 'pi-think-twice/package-lock.json'
+
+      - name: Validate tag version matches package.json version
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          VERSION=$(node -p "require('./pi-think-twice/package.json').version")
+          echo "tag=${TAG}"
+          echo "version=${VERSION}"
+          # Tolerate '<pkg>@<ver>' with an optional leading 'v' on <ver>
+          PKG_VER="${TAG#pi-think-twice@}"
+          PKG_VER="${PKG_VER#v}"
+          if [ "$PKG_VER" != "$VERSION" ]; then
+            echo "::error::Tag '${TAG}' does not pin package.json version '${VERSION}' (expected 'pi-think-twice@${VERSION}')"
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: pi-think-twice
+
+      - name: Run tests
+        run: npm test
+        working-directory: pi-think-twice
+
+      - name: Publish to npm
+        run: npm publish
+        working-directory: pi-think-twice
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

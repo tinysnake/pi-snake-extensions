@@ -1,0 +1,51 @@
+{
+  "name": "pi-think-twice",
+  "version": "0.1.0",
+  "description": "Send countdown for pi: Enter opens a grace period before your message is sent — text stays in the editor, any key interrupts, ESC cancels, Ctrl+Enter sends now",
+  "keywords": [
+    "pi",
+    "pi-package",
+    "pi-extension",
+    "send",
+    "grace-period",
+    "delay",
+    "regret"
+  ],
+  "homepage": "https://github.com/tinysnake/pi-snake-extensions#readme",
+  "bugs": {
+    "url": "https://github.com/tinysnake/pi-snake-extensions/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tinysnake/pi-snake-extensions.git",
+    "directory": "pi-think-twice"
+  },
+  "license": "MIT",
+  "author": "SNAKE (https://github.com/tinysnake)",
+  "type": "module",
+  "main": "./index.ts",
+  "files": [
+    "*.ts",
+    "README.md",
+    "CHANGELOG.md",
+    "!tests/"
+  ],
+  "scripts": {
+    "test": "node --test tests/*.test.ts"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
+  },
+  "engines": {
+    "node": ">=22.6"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
