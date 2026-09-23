@@ -15,6 +15,8 @@ interface MakeOptions {
 	shouldCountdown?: (text: string, builtinCommands: readonly string[]) => boolean;
 	liveCommandNames?: () => readonly string[];
 	delaySeconds?: number;
+	doubleEnterSeconds?: number;
+	warning?: (text: string) => string;
 }
 
 function makeEditor(options?: MakeOptions) {
@@ -35,8 +37,10 @@ function makeEditor(options?: MakeOptions) {
 	};
 	const editor = new ThinkTwiceEditor(tui as never, theme as never, keybindings as never, {
 		delaySeconds: options?.delaySeconds ?? 0.4,
+		doubleEnterSeconds: options?.doubleEnterSeconds,
 		shouldCountdown: options?.shouldCountdown ?? (() => true),
 		liveCommandNames: options?.liveCommandNames ?? (() => []),
+		warning: options?.warning,
 	});
 	const submitted: string[] = [];
 	editor.onSubmit = (text: string) => submitted.push(text);
@@ -58,7 +62,9 @@ test("Enter keeps the text in the box and submits only after the countdown", asy
 	assert.equal(editor.getText(), "");
 });
 
-test("Enter during the countdown is ignored: no send, no restart, no cancel", async () => {
+test("Enter during the countdown is ignored before the double-enter interval: no send, no restart, no cancel", async () => {
+	// delay 400ms, default double-enter interval 1000ms: the second Enter at
+	// 150ms falls inside both, so it can never send early here.
 	const { editor, submitted } = makeEditor({ delaySeconds: 0.4 });
 	editor.handleInput(ENTER);
 	await sleep(150);
@@ -68,6 +74,26 @@ test("Enter during the countdown is ignored: no send, no restart, no cancel", as
 	assert.equal(editor.getText(), "");
 	await sleep(300);
 	assert.equal(submitted.length, 1);
+});
+
+test("a second Enter after the double-enter interval sends immediately", async () => {
+	const { editor, submitted } = makeEditor({ delaySeconds: 5, doubleEnterSeconds: 0.15 });
+	editor.handleInput(ENTER);
+	await sleep(250); // past the 150ms interval, way before the 5s deadline
+	editor.handleInput(ENTER);
+	assert.deepEqual(submitted, ["hello"]);
+	assert.equal(editor.getText(), "");
+	assert.equal((editor as unknown as { countdownTimer?: unknown }).countdownTimer, undefined);
+	await sleep(100);
+	assert.equal(submitted.length, 1); // timer really stopped, nothing fires later
+});
+
+test("doubleEnterSeconds: 0 lets any Enter during the countdown send", () => {
+	const { editor, submitted } = makeEditor({ delaySeconds: 5, doubleEnterSeconds: 0 });
+	editor.handleInput(ENTER);
+	editor.handleInput(ENTER); // first tick of the countdown already
+	assert.deepEqual(submitted, ["hello"]);
+	assert.equal((editor as unknown as { countdownTimer?: unknown }).countdownTimer, undefined);
 });
 
 test("any other key interrupts the countdown and leaves the text editable", async () => {
@@ -156,4 +182,27 @@ test("a throwing liveCommandNames fails open too", () => {
 	});
 	editor.handleInput(ENTER);
 	assert.deepEqual(submitted, ["hello"]);
+});
+
+test("the countdown text is painted with the warning color as a whole", () => {
+	const { editor } = makeEditor({
+		delaySeconds: 5,
+		doubleEnterSeconds: 1,
+		warning: (text) => `W{${text}}`,
+	});
+	editor.handleInput(ENTER);
+	const border = (editor as unknown as { renderTopBorder(width: number, hidden: number): string }).renderTopBorder(80, 0);
+	// Border dashes stay border-colored; spinner + message wear one warning span.
+	assert.match(border, /^── W\{[^}]+· Ctrl\+Enter send now\}─+$/);
+});
+
+test("the border hint flips to plain Enter once the double-enter interval passes", async () => {
+	const { editor } = makeEditor({ delaySeconds: 5, doubleEnterSeconds: 0.15 });
+	editor.handleInput(ENTER);
+	const border = () =>
+		(editor as unknown as { renderTopBorder(width: number, hidden: number): string }).renderTopBorder(80, 0);
+	assert.match(border(), /Ctrl\+Enter send now/);
+	await sleep(250);
+	assert.match(border(), /Enter send now/);
+	assert.doesNotMatch(border(), /Ctrl\+Enter send now/);
 });

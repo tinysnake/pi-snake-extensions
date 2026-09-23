@@ -7,12 +7,23 @@ import { normalizeCommandName } from "./decide.ts";
 
 export const CONFIG_FILE_NAME = "pi-think-twice.json";
 export const DEFAULT_DELAY_SECONDS = 3;
+/**
+ * Minimum gap between the first Enter and a second Enter that sends while
+ * the countdown runs — a faster repeat is treated as a key bounce and stays
+ * ignored.
+ */
+export const DEFAULT_DOUBLE_ENTER_SECONDS = 1;
 /** Commands that force the countdown even though they are built in. */
 export const SEED_ALWAYS_COUNTDOWN: readonly string[] = ["compact"];
 
 export interface ThinkTwiceConfig {
 	/** Seconds the send countdown lasts; 0 disables pi-think-twice entirely. */
 	readonly delaySeconds: number;
+	/**
+	 * Seconds that must pass after the first Enter before a second Enter
+	 * sends immediately; 0 lets any Enter during the countdown send.
+	 */
+	readonly doubleEnterSeconds: number;
 	/** Normalized command names (no leading slash): built-ins that still count down. */
 	readonly alwaysCountdown: readonly string[];
 }
@@ -20,6 +31,7 @@ export interface ThinkTwiceConfig {
 function defaults(): ThinkTwiceConfig {
 	return {
 		delaySeconds: DEFAULT_DELAY_SECONDS,
+		doubleEnterSeconds: DEFAULT_DOUBLE_ENTER_SECONDS,
 		alwaysCountdown: [...SEED_ALWAYS_COUNTDOWN],
 	};
 }
@@ -48,6 +60,12 @@ export function parseThinkTwiceConfig(raw: string | undefined): ThinkTwiceConfig
 		delaySeconds = Math.max(0, delay);
 	}
 
+	let doubleEnterSeconds = DEFAULT_DOUBLE_ENTER_SECONDS;
+	const doubleEnter = obj.doubleEnterSeconds;
+	if (typeof doubleEnter === "number" && Number.isFinite(doubleEnter)) {
+		doubleEnterSeconds = Math.max(0, doubleEnter);
+	}
+
 	let alwaysCountdown = [...SEED_ALWAYS_COUNTDOWN];
 	const extra = obj.alwaysCountdown;
 	if (Array.isArray(extra)) {
@@ -58,7 +76,7 @@ export function parseThinkTwiceConfig(raw: string | undefined): ThinkTwiceConfig
 		alwaysCountdown = [...new Set([...alwaysCountdown, ...names])];
 	}
 
-	return { delaySeconds, alwaysCountdown };
+	return { delaySeconds, doubleEnterSeconds, alwaysCountdown };
 }
 
 /** Read and parse the config file; any read failure yields the defaults. */

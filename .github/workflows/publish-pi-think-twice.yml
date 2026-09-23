@@ -19,6 +19,9 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      # Trusted publishing (npm OIDC): npm exchanges this OIDC token for a
+      # short-lived publish credential — no NPM_TOKEN secret needed.
+      id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -53,8 +56,13 @@ jobs:
         run: npm test
         working-directory: pi-think-twice
 
+      # Trusted publishing requires npm >= 11.5.1 (Node 22 ships npm 10.x)
+      - name: Upgrade npm for OIDC trusted publishing
+        run: npm install -g npm@^11.5.1
+
+      # NODE_AUTH_TOKEN must NOT be set: with id-token: write and npm >= 11.5.1,
+      # npm detects the GitHub Actions OIDC environment and authenticates via
+      # the trusted publisher configured on npmjs.com for pi-think-twice.
       - name: Publish to npm
         run: npm publish
         working-directory: pi-think-twice
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

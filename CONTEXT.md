@@ -24,6 +24,10 @@ Any user input during the send countdown; its result is a cancel.
 **Send now**:
 A submit gesture that skips the send countdown entirely.
 
+**Double enter**:
+A second plain `Enter` pressed during the send countdown at least `doubleEnterSeconds` after the first; it ends the countdown early and sends.
+_Avoid_: Send now (which skips the countdown rather than ending an active one)
+
 **Command**:
 A slash input that pi executes as an action rather than conversation content.
 _Avoid_: Skill invocation, template (both produce messages, not commands)

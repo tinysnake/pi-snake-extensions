@@ -3,9 +3,11 @@
  *
  * Enter no longer sends immediately: it opens a send countdown (default 3 s)
  * with the text staying in the editor. Any key interrupts and leaves you
- * editing; Enter alone is ignored; Ctrl+Enter sends immediately. Exempt
- * commands (built-in and registered) submit as before — unless listed in
- * `alwaysCountdown` (seeded with `/compact`).
+ * editing; Enter alone is ignored until `doubleEnterSeconds` (default 1 s)
+ * have elapsed since the first one, after which Enter sends immediately;
+ * Ctrl+Enter sends immediately. Exempt commands (built-in and registered)
+ * submit as before — unless listed in `alwaysCountdown` (seeded with
+ * `/compact`).
  *
  * Built-in commands are not hardcoded: they are reflected from the live
  * autocomplete provider pi hands to our editor (see builtins.ts), with a
@@ -13,7 +15,7 @@
  * never affects pi.
  *
  * Config: `~/.pi/agent/pi-think-twice.json`
- *   { "delaySeconds": 3, "alwaysCountdown": ["/compact"] }
+ *   { "delaySeconds": 3, "doubleEnterSeconds": 1, "alwaysCountdown": ["/compact"] }
  * `delaySeconds: 0` disables the extension. Restart pi after editing.
  */
 import { getAgentDir, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -35,6 +37,7 @@ export default function (pi: ExtensionAPI) {
 			(tui, editorTheme, keybindings) =>
 				new ThinkTwiceEditor(tui, editorTheme, keybindings, {
 					delaySeconds: config.delaySeconds,
+					doubleEnterSeconds: config.doubleEnterSeconds,
 					shouldCountdown: (text, builtinCommands) =>
 						shouldCountdown(text, {
 							alwaysCountdown: config.alwaysCountdown,
@@ -46,8 +49,8 @@ export default function (pi: ExtensionAPI) {
 								.map((command) => command.name),
 						}),
 					liveCommandNames: () => pi.getCommands().map((command) => command.name),
-					accent: (s) => theme.fg("accent", s),
-					muted: (s) => theme.fg("muted", s),
+					// Whole countdown text in the theme's warning color (yellow/orange).
+					warning: (s) => theme.fg("warning", s),
 				}),
 		);
 	});

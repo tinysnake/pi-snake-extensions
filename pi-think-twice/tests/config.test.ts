@@ -1,10 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseThinkTwiceConfig, DEFAULT_DELAY_SECONDS, SEED_ALWAYS_COUNTDOWN } from "../config.ts";
+import { parseThinkTwiceConfig, DEFAULT_DELAY_SECONDS, DEFAULT_DOUBLE_ENTER_SECONDS, SEED_ALWAYS_COUNTDOWN } from "../config.ts";
 
 test("missing config falls back to defaults", () => {
 	const config = parseThinkTwiceConfig(undefined);
 	assert.equal(config.delaySeconds, 3);
+	assert.equal(config.doubleEnterSeconds, 1);
 	assert.deepEqual([...config.alwaysCountdown], [...SEED_ALWAYS_COUNTDOWN]);
 });
 
@@ -28,6 +29,16 @@ test("valid delay is honored, negative clamps to 0, invalid type falls back to 3
 	assert.equal(parseThinkTwiceConfig('{"delaySeconds": -1}').delaySeconds, 0);
 	assert.equal(parseThinkTwiceConfig('{"delaySeconds": "5"}').delaySeconds, DEFAULT_DELAY_SECONDS);
 	assert.equal(parseThinkTwiceConfig('{"delaySeconds": null}').delaySeconds, DEFAULT_DELAY_SECONDS);
+});
+
+test("doubleEnterSeconds: valid values honored, negative clamps to 0, wrong type falls back to 1", () => {
+	assert.equal(parseThinkTwiceConfig("{}").doubleEnterSeconds, DEFAULT_DOUBLE_ENTER_SECONDS);
+	assert.equal(parseThinkTwiceConfig('{"doubleEnterSeconds": 2.5}').doubleEnterSeconds, 2.5);
+	assert.equal(parseThinkTwiceConfig('{"doubleEnterSeconds": 0}').doubleEnterSeconds, 0);
+	assert.equal(parseThinkTwiceConfig('{"doubleEnterSeconds": -1}').doubleEnterSeconds, 0);
+	assert.equal(parseThinkTwiceConfig('{"doubleEnterSeconds": "1"}').doubleEnterSeconds, 1);
+	assert.equal(parseThinkTwiceConfig('{"doubleEnterSeconds": null}').doubleEnterSeconds, 1);
+	assert.equal(parseThinkTwiceConfig('{"doubleEnterSeconds": NaN-ish}').doubleEnterSeconds, 1);
 });
 
 test("alwaysCountdown unions with the seed and normalizes entries", () => {

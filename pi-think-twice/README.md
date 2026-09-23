@@ -3,7 +3,10 @@
 **Think twice before you send:** `Enter` opens a send countdown (default 3 s)
 instead of sending — your text stays in the editor, giving you a grace period
 to notice the typo, the wrong wording, or the Enter you didn't mean to press.
-Type anything to interrupt, `ESC` to cancel, `Ctrl+Enter` to send now.
+Type anything to interrupt, `ESC` to cancel, press `Enter` again once the
+double-enter interval (default 1 s) has passed to send, or `Ctrl+Enter` to
+send right away. The countdown blares in the theme's warning color
+(yellow/orange).
 
 A send-countdown extension for the [pi](https://github.com/earendil-works/pi)
 coding agent.
@@ -15,15 +18,22 @@ coding agent.
 | idle | `Enter` | Start the countdown — text stays in the box |
 | idle | `Ctrl+Enter` | Send immediately (skip the countdown) |
 | counting down | any key | Interrupt — text stays, you keep editing |
-| counting down | `Enter` | Ignored (no send, no restart, no cancel) |
+| counting down | `Enter` before `doubleEnterSeconds` | Ignored (no send, no restart, no cancel) — a bounce-safe window |
+| counting down | `Enter` after `doubleEnterSeconds` | Send now, countdown finished early |
 | counting down | `Ctrl+Enter` | Send now, countdown finished early |
 | counting down | timeout | Message enters the session |
 
 The countdown renders in the editor's top border, next to the same spinner pi
-uses for its working indicator:
+uses for its working indicator, painted with the theme's warning color:
 
 ```
 ── ⠹ sending in 2s · ESC to cancel · Ctrl+Enter send now ──
+```
+
+Once the double-enter interval has elapsed the hint flips to plain `Enter`:
+
+```
+── ⠹ sending in 2s · ESC to cancel · Enter send now ──
 ```
 
 ## What counts down
@@ -48,12 +58,18 @@ Cancelled messages never enter `↑` input history — cancel means *never sent*
 ```json
 {
   "delaySeconds": 3,
+  "doubleEnterSeconds": 1,
   "alwaysCountdown": ["/compact"]
 }
 ```
 
 - `delaySeconds` — countdown length; `0` disables pi-think-twice entirely.
   Missing/invalid file or value falls back to `3`.
+- `doubleEnterSeconds` — the double-enter interval: a second `Enter` during
+  the countdown sends only once this much time has passed since the first
+  one (earlier repeats stay ignored, so key bounce can't fire a send); `0`
+  lets any `Enter` during the countdown send. Missing/invalid value falls
+  back to `1`.
 - `alwaysCountdown` — extra commands forced through the countdown; unioned with
   the built-in seed (`compact`), entries may be written with or without the
   leading slash.

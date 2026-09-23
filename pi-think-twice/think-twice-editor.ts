@@ -5,7 +5,9 @@
  * Key handling, per the design:
  * - Enter while idle (non-exempt text): start the countdown, text stays put.
  * - Any key while counting down: cancel (text stays — keep editing).
- * - Enter while counting down: ignored (no send, no restart, no cancel).
+ * - Enter while counting down: ignored until `doubleEnterSeconds` (default
+ *   1 s) have elapsed since the first Enter — a deliberate double Enter then
+ *   sends immediately; a faster repeat is treated as a bounce and ignored.
  * - Ctrl+Enter: send now — skips the countdown when idle, finishes it early
  *   while active.
  *
@@ -23,6 +25,7 @@ import {
 	type TUI,
 } from "@earendil-works/pi-tui";
 import { resolveBuiltinCommands } from "./builtins.ts";
+import { DEFAULT_DOUBLE_ENTER_SECONDS } from "./config.ts";
 
 /** Same braille frames as pi's own working spinner (pi-tui Loader defaults). */
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
@@ -35,6 +38,11 @@ export interface ThinkTwiceEditorOptions {
 	/** Countdown length in seconds (> 0; the extension is not installed at 0). */
 	delaySeconds: number;
 	/**
+	 * Seconds that must pass after the first Enter before a second Enter
+	 * sends immediately; 0 lets any Enter during the countdown send.
+	 */
+	doubleEnterSeconds?: number;
+	/**
 	 * Decides whether this submission opens the countdown. Receives the
 	 * built-in command names reflected from pi's autocomplete provider.
 	 */
@@ -44,19 +52,17 @@ export interface ThinkTwiceEditorOptions {
 	 * list to isolate the built-ins.
 	 */
 	liveCommandNames: () => readonly string[];
-	/** Spinner color; falls back to the editor border color. */
-	accent?: (text: string) => string;
-	/** Countdown text color; falls back to the editor border color. */
-	muted?: (text: string) => string;
+	/** Warning color (yellow/orange) for the whole countdown text; falls back to the editor border color. */
+	warning?: (text: string) => string;
 }
 
 export class ThinkTwiceEditor extends CustomEditor {
 	private readonly kb: KeybindingsManager;
 	private readonly delayMs: number;
+	private readonly doubleEnterMs: number;
 	private readonly shouldCountdownFn: ThinkTwiceEditorOptions["shouldCountdown"];
 	private readonly liveCommandNames: () => readonly string[];
-	private readonly accent: (text: string) => string;
-	private readonly muted: (text: string) => string;
+	private readonly warning: (text: string) => string;
 
 	/** pi's autocomplete provider, captured for built-in reflection. */
 	private receivedProvider: AutocompleteProvider | undefined;
@@ -72,10 +78,10 @@ export class ThinkTwiceEditor extends CustomEditor {
 		super(tui, theme, keybindings, { embedWorkingStatus: true });
 		this.kb = keybindings;
 		this.delayMs = Math.max(0, options.delaySeconds) * 1000;
+		this.doubleEnterMs = Math.max(0, options.doubleEnterSeconds ?? DEFAULT_DOUBLE_ENTER_SECONDS) * 1000;
 		this.shouldCountdownFn = options.shouldCountdown;
 		this.liveCommandNames = options.liveCommandNames;
-		this.accent = options.accent ?? ((text) => theme.borderColor(text));
-		this.muted = options.muted ?? ((text) => theme.borderColor(text));
+		this.warning = options.warning ?? ((text) => theme.borderColor(text));
 	}
 
 	/**
@@ -90,6 +96,16 @@ export class ThinkTwiceEditor extends CustomEditor {
 
 	private get countdownActive(): boolean {
 		return this.countdownTimer !== undefined;
+	}
+
+	/** Milliseconds elapsed since the countdown started (0 while idle). */
+	private elapsedMs(): number {
+		return this.countdownActive ? this.delayMs - (this.deadline - Date.now()) : 0;
+	}
+
+	/** Whether a second Enter now sends: the double-enter interval has passed. */
+	private doubleEnterReady(): boolean {
+		return this.elapsedMs() >= this.doubleEnterMs;
 	}
 
 	override handleInput(data: string): void {
@@ -122,7 +138,11 @@ export class ThinkTwiceEditor extends CustomEditor {
 				return;
 			}
 			if (isSubmit) {
-				// Enter during the countdown is ignored entirely.
+				// Second Enter: ignored until the double-enter interval has elapsed
+				// since the first one; after that it sends immediately.
+				if (this.elapsedMs() >= this.doubleEnterMs) {
+					this.finishNow();
+				}
 				return;
 			}
 			// Any other key interrupts; the text stays in the box.
@@ -249,9 +269,11 @@ export class ThinkTwiceEditor extends CustomEditor {
 			const spinner = SPINNER_FRAMES[this.frameIndex % SPINNER_FRAMES.length];
 
 			// Widest → narrowest; pick the first variant that fits inside the
-			// border ("── " prefix plus at least two trailing dashes).
+			// border ("── " prefix plus at least two trailing dashes). The hint
+			// flips once the double-enter interval makes plain Enter a send.
+			const sendHint = this.doubleEnterReady() ? "Enter send now" : "Ctrl+Enter send now";
 			const variants = [
-				`${spinner} sending in ${seconds}s · ESC to cancel · Ctrl+Enter send now`,
+				`${spinner} sending in ${seconds}s · ESC to cancel · ${sendHint}`,
 				`${spinner} sending in ${seconds}s · ESC to cancel`,
 				`${spinner} ${seconds}s`,
 			];
@@ -262,15 +284,8 @@ export class ThinkTwiceEditor extends CustomEditor {
 			}
 
 			const pad = Math.max(0, width - 3 - visibleWidth(content));
-			const spaceIndex = content.indexOf(" ");
-			const head = spaceIndex === -1 ? content : content.slice(0, spaceIndex);
-			const tail = spaceIndex === -1 ? "" : content.slice(spaceIndex);
-			return (
-				this.borderColor("── ") +
-				this.accent(head) +
-				this.muted(tail) +
-				this.borderColor("─".repeat(pad))
-			);
+			// The whole countdown text (spinner + message) wears the warning color.
+			return this.borderColor("── ") + this.warning(content) + this.borderColor("─".repeat(pad));
 		} catch {
 			// Never let a rendering fault take down the TUI's render loop.
 			return super.renderTopBorder(width, hiddenLineCount);

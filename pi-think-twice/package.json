@@ -1,7 +1,7 @@
 {
   "name": "pi-think-twice",
-  "version": "0.1.0",
-  "description": "Send countdown for pi: Enter opens a grace period before your message is sent — text stays in the editor, any key interrupts, ESC cancels, Ctrl+Enter sends now",
+  "version": "0.1.1",
+  "description": "Send countdown for pi: Enter opens a grace period before your message is sent — text stays in the editor, any key interrupts, ESC cancels, a second Enter (after the double-enter interval) or Ctrl+Enter sends now",
   "keywords": [
     "pi",
     "pi-package",

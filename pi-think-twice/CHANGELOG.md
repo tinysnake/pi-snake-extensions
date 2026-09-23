@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] - 2026-09-23
+
+### Added
+
+- Double enter: a second plain `Enter` during the send countdown now sends
+  immediately once `doubleEnterSeconds` (default 1 s) have passed since the
+  first one; earlier repeats stay ignored, and `Ctrl+Enter` still sends at
+  any time.
+- New config `doubleEnterSeconds` — the double-enter interval; `0` lets any
+  `Enter` during the countdown send.
+- The whole countdown text (spinner, seconds, hints) is painted with the
+  theme's warning color (yellow/orange), and the border hint flips to
+  "Enter send now" once the double-enter interval has elapsed.
+
 ## [0.1.0] - 2026-09-23
 
 ### Added
