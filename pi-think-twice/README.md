@@ -1,15 +1,15 @@
 # pi-think-twice
 
-**Think twice before you send:** `Enter` opens a send countdown (default 3 s)
-instead of sending — your text stays in the editor, giving you a grace period
-to notice the typo, the wrong wording, or the Enter you didn't mean to press.
-Type anything to interrupt, `ESC` to cancel, press `Enter` again once the
-double-enter interval (default 1 s) has passed to send, or `Ctrl+Enter` to
-send right away. The countdown blares in the theme's warning color
-(yellow/orange).
+> **Think twice before you send prompts.**
 
 A send-countdown extension for the [pi](https://github.com/earendil-works/pi)
 coding agent.
+
+By default, a send gesture does not put the message into the session right
+away. It opens a **send countdown** (default 3 s). The message does not enter
+the session until the countdown ends. During the countdown you can interrupt
+and keep editing, cancel, end the countdown early with a double enter, or
+send now.
 
 ## Behavior
 

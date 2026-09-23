@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.2] - 2026-09-23
+
+### Changed
+
+- Package description shortened to "Think twice before you send prompts" —
+  it is the subtitle shown on the pi.dev package gallery.
+- README intro rewritten around deferred send; key details now live only in
+  the behavior table.
+
 ## [0.1.1] - 2026-09-23
 
 ### Added
