@@ -14,6 +14,12 @@ Send countdown — `Enter` opens a grace period (default 3 s) instead of sending
 your message stays in the editor, any key interrupts and keeps it editable,
 `ESC` cancels, `Ctrl+Enter` sends now.
 
+### pi-context-window-cap
+
+Hard global cap on every model's context window (default 300K) — compaction,
+the context meter, and overflow recovery all follow the cap. Global switch via
+`/context-window-cap toggle`, cap value via `/context-window-cap set 300k`.
+
 ## Install
 
 ```bash

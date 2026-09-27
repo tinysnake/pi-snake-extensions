@@ -1,0 +1,51 @@
+{
+	"name": "pi-context-window-cap",
+	"version": "0.1.0",
+	"description": "Hard global cap on every model's context window",
+	"keywords": [
+		"pi",
+		"pi-package",
+		"pi-extension",
+		"context-window",
+		"token-limit",
+		"compaction"
+	],
+	"homepage": "https://github.com/tinysnake/pi-snake-extensions#readme",
+	"bugs": {
+		"url": "https://github.com/tinysnake/pi-snake-extensions/issues"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/tinysnake/pi-snake-extensions.git",
+		"directory": "pi-context-window-cap"
+	},
+	"license": "MIT",
+	"author": "SNAKE (https://github.com/tinysnake)",
+	"type": "module",
+	"main": "./index.ts",
+	"files": [
+		"*.ts",
+		"README.md",
+		"CHANGELOG.md",
+		"!tests/"
+	],
+	"scripts": {
+		"test": "node --test tests/*.test.ts",
+		"typecheck": "tsc --noEmit",
+		"smoke": "node scripts/smoke.mjs -e"
+	},
+	"pi": {
+		"extensions": [
+			"./index.ts"
+		]
+	},
+	"peerDependencies": {
+		"@earendil-works/pi-coding-agent": "*"
+	},
+	"engines": {
+		"node": ">=22.6"
+	},
+	"publishConfig": {
+		"access": "public"
+	}
+}
