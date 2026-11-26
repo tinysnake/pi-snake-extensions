@@ -189,7 +189,8 @@ export async function countMagpieModels(agentDir: string): Promise<number | unde
 	return Array.isArray(block?.models) ? block.models.length : undefined;
 }
 
-async function writeAtomic(path: string, content: string): Promise<void> {
+/** Atomic write in one directory: a temp file, then a rename; the temp is dropped on failure. */
+export async function writeAtomic(path: string, content: string): Promise<void> {
 	const temp = `${path}.${process.pid}.${Date.now().toString(36)}${Math.random().toString(36).slice(2)}.tmp`;
 	try {
 		await writeFile(temp, content, "utf8");

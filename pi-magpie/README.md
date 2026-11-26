@@ -102,6 +102,7 @@ request that just finished rather than a file's tail.
 | `/magpie groups` | every routing group magpie offers |
 | `/magpie refresh` | fetch magpie's catalog again now, and rewrite `models.json` when the switch is on |
 | `/magpie endpoint` | the gateway in use, the `modelsJson` switch, and whether models.json also names it |
+| `/magpie models-json [on|off]` | read or set the switch that writes magpie's catalog into `models.json` (takes effect on the next pi start) |
 | `/magpie help` | the same list, on its own |
 
 Every one completes on Tab: the subcommands while the first word is typed,
@@ -147,14 +148,18 @@ instead of fighting the block.
 pi can run with no extension at all — started with `--no-extensions`, or on a
 machine where pi-magpie could not be loaded. Its magpie models then reach the
 gateway through pi's own `models.json` alone. The extension can keep that file
-current: put a switch in `~/.pi/agent/pi-magpie.json`.
+current: turn on the `modelsJson` switch, with `/magpie models-json on` or by
+hand in `~/.pi/agent/pi-magpie.json`.
 
 ```json
 { "modelsJson": true }
 ```
 
-It is off by default, so nothing changes until you ask. `PI_MAGPIE_CONFIG`
-points the extension at another config file instead.
+It is off by default, so nothing changes until you ask. `/magpie models-json`
+reads the switch and reports what `models.json` holds; a change takes effect on
+the next pi start, since the running extension has already decided whether it
+serves its own list. `PI_MAGPIE_CONFIG` points the extension at another config
+file instead.
 
 With the switch on, the extension writes a `providers.magpie` block — but with
 the per-model `api` and `baseUrl` pi needs to keep every native path: each

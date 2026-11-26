@@ -38,6 +38,7 @@ describe("the /magpie command table", () => {
 				"/magpie groups",
 				"/magpie refresh",
 				"/magpie endpoint",
+				"/magpie models-json [on|off]",
 				"/magpie help",
 			],
 		);
@@ -96,7 +97,7 @@ describe("argumentCompletions", () => {
 	it("narrows the subcommand as it is typed", () => {
 		assert.deepEqual(labels("q"), ["quota [model]"]);
 		assert.deepEqual(labels("gr"), ["group [id]", "groups"]);
-		assert.deepEqual(labels("en"), ["endpoint"]);
+		assert.deepEqual(labels("en"), ["endpoint", "models-json [on|off]"]);
 		// A prefix match comes first, even when other names hold the letter.
 		assert.equal(labels("e")[0], "endpoint");
 		assert.equal(argumentCompletions("nope", source), null);
@@ -131,6 +132,18 @@ describe("argumentCompletions", () => {
 			"auto/mimo-v2.6-flash",
 			"step-5-preview",
 		]);
+	});
+
+	it("offers on and off for models-json, and nothing else", () => {
+		assert.deepEqual(
+			argumentCompletions("models-json ", source)!.map((item) => item.value),
+			["models-json on", "models-json off"],
+		);
+		assert.deepEqual(
+			argumentCompletions("models-json o", source)!.map((item) => item.label),
+			["on", "off"],
+		);
+		assert.equal(argumentCompletions("models-json on ", source), null);
 	});
 
 	it("stops once the argument is done or cannot be completed", () => {

@@ -5,14 +5,17 @@ All notable changes to pi-magpie.
 ## 0.1.7
 
 - A `modelsJson` switch keeps magpie's models usable when pi runs without the
-  extension. Put `{ "modelsJson": true }` in `~/.pi/agent/pi-magpie.json`
-  (`PI_MAGPIE_CONFIG` points at another file) and the extension writes a
-  `providers.magpie` block into `~/.pi/agent/models.json` at startup and on
+  extension. `/magpie models-json` reads it and `/magpie models-json on|off`
+  sets it. On, the extension writes a `providers.magpie` block into
+  `~/.pi/agent/models.json` at startup and on
   `/magpie refresh` — with the per-model `api` and `baseUrl` pi needs, so a
   Responses model asks `/v1/responses` and an Anthropic model talks to the
   root, never `/v1/v1/messages`. Every other key and provider in the file is
   kept. Off by default; the written list is a snapshot of the last time the
   extension ran.
+- The switch lives in `~/.pi/agent/pi-magpie.json` (`PI_MAGPIE_CONFIG` points
+  at another file) and can be edited by hand; a change takes effect on the next
+  pi start.
 - With that switch on the extension serves no live model list of its own, so
   `models.json` is the one list and the startup warning about the two
   conflicting lists stays quiet. `/magpie endpoint` now shows the switch and

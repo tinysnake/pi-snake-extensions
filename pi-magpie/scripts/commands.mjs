@@ -82,7 +82,10 @@ const ctx = {
 for (const callback of started) await callback({ type: "session_start", reason: "resume" }, ctx);
 
 console.log(`registered provider: ${registered.join(", ")}\ncurrent model:       ${model?.id ?? "none"}\n`);
-for (const args of ["", "quota", `quota ${model.id}`, `group`, "groups", "endpoint", "refresh", "help", "bogus"]) {
+// `models-json on`/`off` write into getAgentDir(), so they run only when the
+// caller pointed that at a throwaway directory.
+const toggles = process.env.PI_CODING_AGENT_DIR ? ["models-json on", "models-json off"] : [];
+for (const args of ["", "quota", `quota ${model.id}`, `group`, "groups", "endpoint", "refresh", "models-json", ...toggles, "help", "bogus"]) {
 	console.log(`── /magpie ${args}`.trimEnd());
 	await handler(args, ctx);
 	console.log();
@@ -91,7 +94,7 @@ for (const args of ["", "quota", `quota ${model.id}`, `group`, "groups", "endpoi
 const { argumentCompletions } = await import("../usage.ts");
 const source = { models: () => models, groups: () => groupIds };
 console.log("── Tab completion");
-for (const prefix of ["", "g", "gr", "quota ", "quota mimo", "group ", "groups ", "refresh ", "nope"]) {
+for (const prefix of ["", "g", "gr", "quota ", "quota mimo", "group ", "groups ", "refresh ", "models-json ", "nope"]) {
 	const items = argumentCompletions(prefix, source);
 	const shown = items?.slice(0, 6).map((item) => item.label).join(" | ") ?? "(nothing)";
 	const more = items && items.length > 6 ? ` | +${items.length - 6}` : "";
