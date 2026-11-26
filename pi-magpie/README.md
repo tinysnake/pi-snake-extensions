@@ -100,8 +100,8 @@ request that just finished rather than a file's tail.
 | `/magpie quota [model]` | what the model's provider has left, every account |
 | `/magpie group [id]` | a routing group's members, rules and last decision |
 | `/magpie groups` | every routing group magpie offers |
-| `/magpie refresh` | fetch magpie's catalog again now |
-| `/magpie endpoint` | the gateway in use, and whether models.json also names it |
+| `/magpie refresh` | fetch magpie's catalog again now, and rewrite `models.json` when the switch is on |
+| `/magpie endpoint` | the gateway in use, the `modelsJson` switch, and whether models.json also names it |
 | `/magpie help` | the same list, on its own |
 
 Every one completes on Tab: the subcommands while the first word is typed,
@@ -138,7 +138,38 @@ Anthropic model at `/v1/v1/messages` — and pi prefers its frozen `models`
 list over this extension's live catalog. Requests still work (the endpoint is
 stamped per request), but the model list and native paths don't. Set pi's
 model to `default` in magpie (which removes the block), or delete it by hand.
-The extension reports the conflict once at startup.
+The extension reports the conflict once at startup. To keep the models when
+pi runs without the extension, see [Without the extension](#without-the-extension)
+instead of fighting the block.
+
+## Without the extension
+
+pi can run with no extension at all — started with `--no-extensions`, or on a
+machine where pi-magpie could not be loaded. Its magpie models then reach the
+gateway through pi's own `models.json` alone. The extension can keep that file
+current: put a switch in `~/.pi/agent/pi-magpie.json`.
+
+```json
+{ "modelsJson": true }
+```
+
+It is off by default, so nothing changes until you ask. `PI_MAGPIE_CONFIG`
+points the extension at another config file instead.
+
+With the switch on, the extension writes a `providers.magpie` block — but with
+the per-model `api` and `baseUrl` pi needs to keep every native path: each
+model carries its own protocol, so a Responses model asks `/v1/responses` and
+an Anthropic model talks to the root, never `/v1/v1/messages`. The block is
+written at startup and on `/magpie refresh`. Every other key and provider in
+the file is kept; the file itself is rewritten, so hand-written comments go.
+While the switch is on the extension serves no live model list of its own, so
+the conflict above stays quiet: `models.json` is the one list.
+
+The written list is a snapshot of the catalog as of the last time the
+extension ran — nothing refreshes it while pi runs extension-less. Run
+`/magpie refresh` (or start pi with the extension) after magpie's models
+change, and keep `providers.magpie` out of magpie's own UI, which would write
+its single-`baseUrl` block over this one.
 
 ## Notes & limits
 

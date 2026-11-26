@@ -50,6 +50,18 @@ export interface MagpieProviderHandle {
 	ownedBy(modelId: string): string | undefined;
 	/** The models currently installed, newest catalog first. */
 	models(): readonly PiMagpieModel[];
+	/** Install a catalog as the current one, as a refresh would. */
+	install(models: readonly PiMagpieModel[]): void;
+}
+
+/** How the provider should serve: its own live catalog, or none of its own. */
+export interface MagpieProviderOptions {
+	/**
+	 * With `modelsJson`, magpie's catalog lives in pi's models.json instead:
+	 * the provider serves no models of its own, so pi serves the file's block.
+	 * Registering and streaming are unchanged either way.
+	 */
+	modelsJson?: boolean;
 }
 
 /**
@@ -94,7 +106,10 @@ function forRequest<T extends Model<Api>>(model: T, root: string): T {
 }
 
 /** Build the provider pi registers. */
-export function createMagpieProvider(): MagpieProviderHandle {
+export function createMagpieProvider(options: MagpieProviderOptions = {}): MagpieProviderHandle {
+	// In models.json mode the file is the one model list; a live list next to
+	// it is the conflict the README warns about, and models.json wins anyway.
+	const servesModels = options.modelsJson !== true;
 	let models: PiMagpieModel[] = [];
 	const owners = new Map<string, string>();
 	/** The catalog `/login` just fetched, so the models appear without another round trip. */
@@ -151,8 +166,8 @@ export function createMagpieProvider(): MagpieProviderHandle {
 				},
 			},
 		},
-		getModels: () => models.filter((model) => isModelType(model, "chat")),
-		getAllModels: () => models,
+		getModels: () => (servesModels ? models.filter((model) => isModelType(model, "chat")) : []),
+		getAllModels: () => (servesModels ? models : []),
 		async refreshModels(context: RefreshModelsContext) {
 			// A stored endpoint names the gateway; without one, magpie's own
 			// loopback default is the gateway, so installing is enough to browse it.
@@ -210,6 +225,7 @@ export function createMagpieProvider(): MagpieProviderHandle {
 			return slash > 0 ? modelId.slice(0, slash) : undefined;
 		},
 		models: () => models,
+		install: (next) => install([...next]),
 	};
 }
 
