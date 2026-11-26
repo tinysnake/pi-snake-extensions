@@ -14,10 +14,14 @@ const extension = (await import("../index.ts")).default;
 
 let handler;
 let completions = null;
+let provider = null;
 const started = [];
 const registered = [];
 extension({
-	registerProvider: (provider) => registered.push(provider.id),
+	registerProvider: (registeredProvider) => {
+		registered.push(registeredProvider.id);
+		provider = registeredProvider;
+	},
 	on: (event, callback) => {
 		if (event === "session_start") started.push(callback);
 		return () => {};
@@ -28,6 +32,18 @@ extension({
 	},
 });
 if (!handler) throw new Error("the extension registered no /magpie command");
+
+// Populate the provider the way pi's startup refresh does, so commands that
+// read its catalog (a models.json write, a quota) see the live models.
+await provider.refreshModels({
+	credential: { type: "api_key", key: "magpie", env: { MAGPIE_GW_URL: root } },
+	allowNetwork: true,
+	signal: AbortSignal.timeout(8_000),
+	publish: async ({ update }) => {
+		update?.();
+		return true;
+	},
+});
 
 const { toPiModels } = await import("../catalog.ts");
 const { fetchCatalog } = await import("../gateway.ts");

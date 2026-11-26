@@ -30,6 +30,8 @@
 import { getAgentDir, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { Api, Model } from "@earendil-works/pi-ai/compat";
 import { DEFAULT_TOKEN, PROVIDER_ID, ROOT_ENV, STATUS_KEY, STATUS_TTL_MS, STALE_READING_MS } from "./constants.ts";
+import { magpieConfigPath, readMagpieConfig } from "./config.ts";
+import { countMagpieModels, writeMagpieModels, type WriteResult } from "./models-json.ts";
 import {
 	defaultRoot,
 	fetchModel,
@@ -103,7 +105,8 @@ interface GatewayAuth {
 }
 
 export default function (pi: ExtensionAPI): void {
-	const magpie = createMagpieProvider();
+	const modelsJson = readMagpieConfig(getAgentDir()).modelsJson;
+	const magpie = createMagpieProvider({ modelsJson });
 	pi.registerProvider(magpie.provider);
 
 	let cache: { key: string; at: number; reading: StatusReading } | undefined;
@@ -216,7 +219,12 @@ export default function (pi: ExtensionAPI): void {
 		written = undefined;
 		failures = 0;
 		lastFullAt = 0;
-		if (event.reason === "startup") await warnIfModelsJsonHandlesMagpie(ctx);
+		if (event.reason === "startup") {
+			// In models.json mode the block is the point, not the conflict the
+			// warning describes, so the warning is quiet and the block is written.
+			await warnIfModelsJsonHandlesMagpie(ctx, modelsJson);
+			if (modelsJson) await syncModelsJson(ctx, magpie);
+		}
 		await refreshStatus(ctx, { force: true });
 		// `magpie groups` takes a moment (it asks the running magpie): the footer
 		// paints from the routing trace first, and paints again when the list lands.
@@ -259,7 +267,7 @@ export default function (pi: ExtensionAPI): void {
 			const [sub, ...rest] = args.trim().split(/\s+/).filter(Boolean);
 			const target = rest[0];
 			const now = Date.now();
-			const lines = await report(ctx, magpie, sub, target, now, groups);
+			const lines = await report(ctx, magpie, sub, target, now, groups, modelsJson);
 			const unknown = sub !== undefined && !findSubcommand(sub);
 			ctx.ui.notify(lines.join("\n"), unknown ? "warning" : "info");
 			if (sub === "refresh") {
@@ -375,6 +383,7 @@ async function report(
 	target: string | undefined,
 	now: number,
 	groups: ReadonlySet<string>,
+	modelsJson: boolean,
 ): Promise<string[]> {
 	switch (sub) {
 		case "quota":
@@ -384,9 +393,9 @@ async function report(
 		case "groups":
 			return groupsReport(ctx, magpie, groups);
 		case "refresh":
-			return refreshReport(ctx);
+			return refreshReport(ctx, magpie, modelsJson);
 		case "endpoint":
-			return endpointReport(ctx);
+			return endpointReport(ctx, modelsJson);
 		case "help":
 			return helpReport();
 		case undefined:
@@ -574,7 +583,19 @@ async function groupsReport(
 	return lines;
 }
 
-async function refreshReport(ctx: ExtensionContext): Promise<string[]> {
+async function refreshReport(
+	ctx: ExtensionContext,
+	magpie: MagpieProviderHandle,
+	modelsJson: boolean,
+): Promise<string[]> {
+	if (modelsJson) {
+		// Ask magpie for its catalog again, then write what it holds: the block
+		// and the live list move together, and the write itself reads no network.
+		const refreshed = await ctx.modelRegistry.refresh({ providers: [PROVIDER_ID], force: true });
+		const refreshError = refreshed.errors.get(PROVIDER_ID);
+		if (refreshError) return [`could not refresh magpie's catalog: ${refreshError.message}`];
+		return syncModelsJson(ctx, magpie);
+	}
 	const result = await ctx.modelRegistry.refresh({ providers: [PROVIDER_ID], force: true });
 	const error = result.errors.get(PROVIDER_ID);
 	if (error) return [`could not refresh magpie's catalog: ${error.message}`];
@@ -582,8 +603,41 @@ async function refreshReport(ctx: ExtensionContext): Promise<string[]> {
 	return [`magpie's catalog: ${count(models.length, "model")}`];
 }
 
-async function endpointReport(ctx: ExtensionContext): Promise<string[]> {
+/**
+ * Write magpie's catalog into pi's models.json, so a pi that cannot load this
+ * extension still has the models. Uses the catalog the provider already holds
+ * and the endpoint this session is on; the write asks no vendor.
+ */
+async function syncModelsJson(
+	ctx: ExtensionContext,
+	magpie: MagpieProviderHandle,
+): Promise<string[]> {
+	const agentDir = getAgentDir();
+	const models = magpie.models();
+	// Never overwrite a good block with nothing: at startup the catalog can be
+	// empty (no stored list yet, gateway down), and an empty block would throw
+	// away the models a previous run wrote.
+	if (models.length === 0) {
+		return [`models.json: magpie listed no models; ${modelsJsonPath(agentDir)} left alone`];
+	}
 	const auth = await gatewayAuth(ctx);
+	let result: WriteResult;
+	try {
+		result = await writeMagpieModels(agentDir, auth.root, models);
+	} catch (error) {
+		return [`could not write ${modelsJsonPath(agentDir)}: ${(error as Error).message}`];
+	}
+	// pi composes a provider from models.json when it refreshes: do that now,
+	// without the network, so this session sees the block just written.
+	await ctx.modelRegistry.refresh({ providers: [PROVIDER_ID], allowNetwork: false }).catch(() => {});
+	return [
+		`models.json: ${result.changed ? "wrote" : "kept"} ${count(result.models, "model")} in ${result.path}`,
+	];
+}
+
+async function endpointReport(ctx: ExtensionContext, modelsJson: boolean): Promise<string[]> {
+	const auth = await gatewayAuth(ctx);
+	const agentDir = getAgentDir();
 	const lines = [
 		`endpoint: ${gatewayUrlFor(auth.root)}${auth.local ? "" : " (remote)"} (${auth.stored ? "stored" : "default"})`,
 		`default:  ${gatewayUrlFor(defaultRoot())}`,
@@ -592,9 +646,15 @@ async function endpointReport(ctx: ExtensionContext): Promise<string[]> {
 	];
 	const status = ctx.modelRegistry.getProviderAuthStatus(PROVIDER_ID);
 	lines.push(`auth: ${status.configured ? (status.label ?? status.source ?? "configured") : "not configured"}`);
-	if (await magpieProviderInModelsJson(getAgentDir())) {
+	lines.push(`config:   ${magpieConfigPath(agentDir)} (modelsJson: ${modelsJson ? "on" : "off"})`);
+	if (modelsJson) {
+		const written = await countMagpieModels(agentDir);
 		lines.push(
-			`note: ${modelsJsonPath(getAgentDir())} also names providers.${PROVIDER_ID} — magpie's static block overrides every model's base URL. Set Pi's model to default in magpie, or drop that block.`,
+			`models.json: ${modelsJsonPath(agentDir)} (${written === undefined ? "no block" : count(written, "model")})`,
+		);
+	} else if (await magpieProviderInModelsJson(agentDir)) {
+		lines.push(
+			`note: ${modelsJsonPath(agentDir)} also names providers.${PROVIDER_ID} — magpie's static block overrides every model's base URL. Set Pi's model to default in magpie, or drop that block.`,
 		);
 	}
 	return lines;
@@ -705,7 +765,13 @@ async function groupRoutes(): Promise<Map<string, Route>> {
  * models get: one baseUrl for every model of the provider. Say so once, at
  * startup.
  */
-async function warnIfModelsJsonHandlesMagpie(ctx: ExtensionContext): Promise<void> {
+async function warnIfModelsJsonHandlesMagpie(
+	ctx: ExtensionContext,
+	modelsJson = false,
+): Promise<void> {
+	// In models.json mode the block is written on purpose: it is not the
+	// conflict this warning describes, so the warning stays quiet.
+	if (modelsJson) return;
 	const status = ctx.modelRegistry.getProviderAuthStatus(PROVIDER_ID);
 	if (!status.configured) return;
 	if (!(await magpieProviderInModelsJson(getAgentDir()))) return;
