@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, beforeEach, test } from "node:test";
-import { magpieConfigPath, readMagpieConfig } from "../config.ts";
+import { magpieConfigPath, readMagpieConfig, writeMagpieConfig } from "../config.ts";
 
 const realConfigEnv = process.env.PI_MAGPIE_CONFIG;
 let dir: string;
@@ -69,4 +69,39 @@ test("config: the default path is pi-magpie.json in the agent dir", () => {
 	assert.equal(magpieConfigPath(dir), join(dir, "pi-magpie.json"));
 	process.env.PI_MAGPIE_CONFIG = "  /tmp/pi-magpie-test.json  ";
 	assert.equal(magpieConfigPath(dir), "/tmp/pi-magpie-test.json");
+});
+
+test("config: the writer creates the file when it is missing", async () => {
+	const path = join(dir, "written.json");
+	process.env.PI_MAGPIE_CONFIG = path;
+	assert.equal(await writeMagpieConfig(dir, { modelsJson: true }), path);
+	assert.deepEqual(JSON.parse(await readFile(path, "utf8")), { modelsJson: true });
+});
+
+test("config: the writer keeps every key it did not patch", async () => {
+	const path = join(dir, "keeps.json");
+	await writeFile(path, `${JSON.stringify({ modelsJson: false, other: { a: 1 } })}\n`);
+	process.env.PI_MAGPIE_CONFIG = path;
+	await writeMagpieConfig(dir, { modelsJson: true });
+	assert.deepEqual(JSON.parse(await readFile(path, "utf8")), { modelsJson: true, other: { a: 1 } });
+});
+
+test("config: the writer replaces a malformed or non-object file from empty", async () => {
+	for (const [name, body] of [
+		["malformed-write.json", "{ not json"],
+		["array-write.json", "[1, 2, 3]"],
+	] as const) {
+		const path = join(dir, name);
+		await writeFile(path, body);
+		process.env.PI_MAGPIE_CONFIG = path;
+		await writeMagpieConfig(dir, { modelsJson: true });
+		assert.deepEqual(JSON.parse(await readFile(path, "utf8")), { modelsJson: true }, name);
+	}
+});
+
+test("config: the writer leaves no temp file behind", async () => {
+	const path = join(dir, "atomic.json");
+	process.env.PI_MAGPIE_CONFIG = path;
+	await writeMagpieConfig(dir, { modelsJson: true });
+	assert.deepEqual((await readdir(dir)).filter((name) => name.endsWith(".tmp")), []);
 });

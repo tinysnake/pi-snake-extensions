@@ -22,6 +22,7 @@ export const SUBCOMMANDS: readonly MagpieSubcommand[] = [
 	{ name: "groups", summary: "every routing group magpie offers" },
 	{ name: "refresh", summary: "fetch magpie's catalog again now" },
 	{ name: "endpoint", summary: "the gateway in use, and what models.json says" },
+	{ name: "models-json", args: "[on|off]", summary: "read or set whether magpie's catalog is written into models.json" },
 	{ name: "help", summary: "this list" },
 ];
 
@@ -136,6 +137,19 @@ export function argumentCompletions(prefix: string, source: CompletionSource): C
 				const id = shortGroupId(model.id);
 				return { value: `group ${id}`, label: id, description: model.name };
 			}),
+		);
+	}
+	if (name === "models-json") {
+		const values = [
+			{ value: "on", description: "write magpie's catalog into models.json" },
+			{ value: "off", description: "stop writing it there" },
+		];
+		return itemsOrNull(
+			rank(values, query, (item) => item.value).map((item) => ({
+				value: `models-json ${item.value}`,
+				label: item.value,
+				description: item.description,
+			})),
 		);
 	}
 	return null;

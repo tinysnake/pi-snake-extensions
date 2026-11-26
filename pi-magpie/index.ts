@@ -12,6 +12,7 @@
  *   /magpie groups       every routing group magpie offers
  *   /magpie refresh      fetch magpie's catalog again now
  *   /magpie endpoint     the gateway in use, and whether models.json also names it
+ *   /magpie models-json  read, or set with `on`/`off`, whether magpie's catalog is written into models.json
  *
  * Every one of those completes on Tab: the subcommands while the first word is
  * typed, then the ids the subcommand takes.
@@ -30,7 +31,7 @@
 import { getAgentDir, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { Api, Model } from "@earendil-works/pi-ai/compat";
 import { DEFAULT_TOKEN, PROVIDER_ID, ROOT_ENV, STATUS_KEY, STATUS_TTL_MS, STALE_READING_MS } from "./constants.ts";
-import { magpieConfigPath, readMagpieConfig } from "./config.ts";
+import { magpieConfigPath, readMagpieConfig, writeMagpieConfig } from "./config.ts";
 import { countMagpieModels, writeMagpieModels, type WriteResult } from "./models-json.ts";
 import {
 	defaultRoot,
@@ -266,6 +267,13 @@ export default function (pi: ExtensionAPI): void {
 		handler: async (args, ctx) => {
 			const [sub, ...rest] = args.trim().split(/\s+/).filter(Boolean);
 			const target = rest[0];
+			if (sub === "models-json") {
+				// The switch's own command: it writes the file, so it reports on its
+				// own and picks its severity from whether the toggle changed anything.
+				const result = await modelsJsonCommand(ctx, magpie, target);
+				ctx.ui.notify(result.lines.join("\n"), result.warning ? "warning" : "info");
+				return;
+			}
 			const now = Date.now();
 			const lines = await report(ctx, magpie, sub, target, now, groups, modelsJson);
 			const unknown = sub !== undefined && !findSubcommand(sub);
@@ -648,16 +656,61 @@ async function endpointReport(ctx: ExtensionContext, modelsJson: boolean): Promi
 	lines.push(`auth: ${status.configured ? (status.label ?? status.source ?? "configured") : "not configured"}`);
 	lines.push(`config:   ${magpieConfigPath(agentDir)} (modelsJson: ${modelsJson ? "on" : "off"})`);
 	if (modelsJson) {
-		const written = await countMagpieModels(agentDir);
-		lines.push(
-			`models.json: ${modelsJsonPath(agentDir)} (${written === undefined ? "no block" : count(written, "model")})`,
-		);
+		lines.push(await modelsJsonHolds(agentDir));
 	} else if (await magpieProviderInModelsJson(agentDir)) {
 		lines.push(
 			`note: ${modelsJsonPath(agentDir)} also names providers.${PROVIDER_ID} — magpie's static block overrides every model's base URL. Set Pi's model to default in magpie, or drop that block.`,
 		);
 	}
 	return lines;
+}
+
+/** One line: what the `providers.magpie` block in models.json holds, if anything. */
+async function modelsJsonHolds(agentDir: string): Promise<string> {
+	const written = await countMagpieModels(agentDir);
+	return `models.json: ${modelsJsonPath(agentDir)} (${
+		written === undefined ? "no block" : count(written, "model")
+	})`;
+}
+
+/**
+ * `/magpie models-json [on|off]` — the switch that puts magpie's catalog into
+ * pi's models.json, written here so nobody edits the file by hand. Reporting
+ * re-reads the file; `on` writes it and then does what `/magpie refresh` does
+ * with the new value; `off` writes it and says the block stays behind. The
+ * gate is decided when the provider is built, so a valid toggle that changed
+ * the file is a warning: until pi restarts, the block it names and this
+ * extension's live list both serve magpie, and the block's one `baseUrl` wins.
+ */
+async function modelsJsonCommand(
+	ctx: ExtensionContext,
+	magpie: MagpieProviderHandle,
+	target: string | undefined,
+): Promise<{ lines: string[]; warning: boolean }> {
+	const agentDir = getAgentDir();
+	if (target === undefined) {
+		const on = readMagpieConfig(agentDir).modelsJson;
+		const lines = [`models.json mode: ${on ? "on" : "off"} — ${magpieConfigPath(agentDir)}`];
+		if (on) lines.push(await modelsJsonHolds(agentDir));
+		return { lines, warning: false };
+	}
+	if (target !== "on" && target !== "off") {
+		return { lines: [`models-json: unknown value "${target}" — accepted: on, off`], warning: false };
+	}
+	const on = target === "on";
+	const changed = readMagpieConfig(agentDir).modelsJson !== on;
+	const path = await writeMagpieConfig(agentDir, { modelsJson: on });
+	const lines = [`models.json mode: ${on ? "on" : "off"} — ${path}`];
+	if (on) {
+		// The same work `/magpie refresh` does, with the value just written.
+		lines.push(...(await refreshReport(ctx, magpie, true)));
+	} else {
+		lines.push(
+			`providers.magpie stays in ${modelsJsonPath(agentDir)} — set Pi's model to default in magpie, or delete the block by hand`,
+		);
+	}
+	lines.push("the switch applies on the next pi start");
+	return { lines, warning: changed };
 }
 
 // =============================================================================

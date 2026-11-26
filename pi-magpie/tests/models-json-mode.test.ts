@@ -70,15 +70,112 @@ test("models.json mode: a startup with no catalog leaves the block on disk alone
 	});
 });
 
+test("models-json on: writes the switch, does refresh's work, and leaves the block", async () => {
+	await withTempAgentDir(
+		async (agentDir) => {
+			const modelsPath = join(agentDir, "models.json");
+			await writeMagpieModels(agentDir, ROOT, CATALOG);
+			const block = readFileSync(modelsPath);
+
+			const extension = loadExtension();
+			const { ctx, notices } = recordingContext();
+			await extension.command("models-json on", ctx);
+
+			assert.equal(
+				readFileSync(join(agentDir, "pi-magpie.json"), "utf8"),
+				`${JSON.stringify({ modelsJson: true }, null, 2)}\n`,
+			);
+			assert.deepEqual(readFileSync(modelsPath), block);
+			assert.equal(notices.length, 1);
+			const lines = notices[0]!.message.split("\n");
+			assert.match(lines[0]!, /^models\.json mode: on — /);
+			assert.match(lines[1]!, /left alone/);
+			assert.equal(lines.at(-1), "the switch applies on the next pi start");
+			assert.equal(notices[0]!.severity, "warning");
+		},
+		'{ "modelsJson": false }\n',
+	);
+});
+
+test("models-json off: writes the switch and leaves the block", async () => {
+	await withTempAgentDir(async (agentDir) => {
+		const modelsPath = join(agentDir, "models.json");
+		await writeMagpieModels(agentDir, ROOT, CATALOG);
+		const block = readFileSync(modelsPath);
+
+		const extension = loadExtension();
+		const { ctx, notices } = recordingContext();
+		await extension.command("models-json off", ctx);
+
+		assert.equal(
+			readFileSync(join(agentDir, "pi-magpie.json"), "utf8"),
+			`${JSON.stringify({ modelsJson: false }, null, 2)}\n`,
+		);
+		assert.deepEqual(readFileSync(modelsPath), block);
+		const lines = notices[0]!.message.split("\n");
+		assert.match(lines[0]!, /^models\.json mode: off — /);
+		assert.match(lines[1]!, /providers\.magpie stays/);
+		assert.match(lines[1]!, /delete the block by hand/);
+		assert.equal(lines.at(-1), "the switch applies on the next pi start");
+		assert.equal(notices[0]!.severity, "warning");
+	});
+});
+
+test("models-json with a bad value names the accepted ones and writes nothing", async () => {
+	await withTempAgentDir(
+		async (agentDir) => {
+			const configPath = join(agentDir, "pi-magpie.json");
+			writeFileSync(configPath, '{ "modelsJson": false, "keep": 1 }\n');
+			const before = readFileSync(configPath);
+
+			const extension = loadExtension();
+			const { ctx, notices } = recordingContext();
+			await extension.command("models-json maybe", ctx);
+
+			assert.deepEqual(readFileSync(configPath), before);
+			assert.equal(notices.length, 1);
+			assert.match(notices[0]!.message, /accepted: on, off/);
+			assert.equal(notices[0]!.severity, "info");
+		},
+		'{ "modelsJson": false }\n',
+	);
+});
+
+test("models-json with no argument reports the switch and what models.json holds", async () => {
+	await withTempAgentDir(async (agentDir) => {
+		await writeMagpieModels(agentDir, ROOT, CATALOG);
+		const extension = loadExtension();
+		const { ctx, notices } = recordingContext();
+
+		await extension.command("models-json", ctx);
+		const on = notices[0]!.message.split("\n");
+		assert.match(on[0]!, /^models\.json mode: on — /);
+		assert.match(on[1]!, /\(2 models\)/);
+		assert.equal(notices[0]!.severity, "info");
+
+		writeFileSync(join(agentDir, "pi-magpie.json"), '{ "modelsJson": false }\n');
+		await extension.command("models-json", ctx);
+		const off = notices[1]!.message.split("\n");
+		assert.equal(off.length, 1);
+		assert.match(off[0]!, /^models\.json mode: off — /);
+	});
+});
+
 /**
  * The real factory against a recording API, dispatching to every handler of an
- * event. The registered provider is dropped: this run has no catalog.
+ * event. The registered provider is dropped: this run has no catalog. The
+ * registered command handler is kept, so `/magpie` replies stay assertable.
  */
-function loadExtension(): (event: string, payload: unknown, ctx: ExtensionContext) => Promise<void> {
+function loadExtension(): ((event: string, payload: unknown, ctx: ExtensionContext) => Promise<void>) & {
+	command: (args: string, ctx: ExtensionContext) => Promise<void>;
+} {
 	const handlers = new Map<string, Array<(payload: unknown, ctx: unknown) => unknown>>();
+	let command: ((args: string, ctx: ExtensionContext) => Promise<void>) | undefined;
 	const api = {
 		registerProvider() {},
-		registerCommand() {},
+		registerCommand(_name: string, options: { handler: (args: string, ctx: ExtensionContext) => Promise<void> }) {
+			command = options.handler;
+		},
 		on(event: string, handler: (payload: unknown, ctx: unknown) => unknown) {
 			const list = handlers.get(event) ?? [];
 			list.push(handler);
@@ -87,9 +184,12 @@ function loadExtension(): (event: string, payload: unknown, ctx: ExtensionContex
 		},
 	} as unknown as ExtensionAPI;
 	magpieExtension(api);
-	return async (event, payload, ctx) => {
-		for (const handler of handlers.get(event) ?? []) await handler(payload, ctx);
-	};
+	return Object.assign(
+		async (event: string, payload: unknown, ctx: ExtensionContext) => {
+			for (const handler of handlers.get(event) ?? []) await handler(payload, ctx);
+		},
+		{ command: command as (args: string, ctx: ExtensionContext) => Promise<void> },
+	);
 }
 
 const REMOTE_AUTH = { env: { MAGPIE_GW_URL: "http://remote.example:7777" }, auth: { apiKey: "key" } };
@@ -110,11 +210,24 @@ function fakeContext(): ExtensionContext {
 	} as unknown as ExtensionContext;
 }
 
-/** A throwaway agent dir with the switch on, and the env and listeners put back after. */
-async function withTempAgentDir(run: (agentDir: string) => Promise<void>): Promise<void> {
+/** The fake context with its notifications kept, so a command's reply is assertable. */
+function recordingContext(): { ctx: ExtensionContext; notices: Array<{ message: string; severity?: string }> } {
+	const ctx = fakeContext();
+	const notices: Array<{ message: string; severity?: string }> = [];
+	(ctx.ui as unknown as { notify(message: string, severity?: string): void }).notify = (message, severity) => {
+		notices.push({ message, severity });
+	};
+	return { ctx, notices };
+}
+
+/** A throwaway agent dir, with the switch's initial value, and the env and listeners put back after. */
+async function withTempAgentDir(
+	run: (agentDir: string) => Promise<void>,
+	initial = '{ "modelsJson": true }\n',
+): Promise<void> {
 	const agentDir = mkdtempSync(join(tmpdir(), "pi-magpie-models-json-"));
 	const config = join(agentDir, "pi-magpie.json");
-	writeFileSync(config, "{ \"modelsJson\": true }\n");
+	writeFileSync(config, initial);
 	const env: Record<string, string> = {
 		PI_CODING_AGENT_DIR: agentDir,
 		PI_MAGPIE_CONFIG: config,
